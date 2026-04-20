@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, MessageSquareWarning, Printer, X, XCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { IntegrityEventWithActor, Request, RequestWithRelations } from '../types/database';
 import {
   parseRequisitionDescription,
@@ -240,14 +241,16 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
       const updates: Partial<Request> = {
         college_budget_type_id: tid || null,
       };
+      let adjustedStructuredPayload: ParsedRequisitionStructured | null = null;
       if (structuredParsed) {
-        updates.description = serializeStructuredRequisition({
+        adjustedStructuredPayload = {
           ...structuredParsed,
           signatories: {
             ...structuredParsed.signatories,
             receivedBy: receivedByOverride ?? structuredParsed.signatories.receivedBy,
           },
-        });
+        };
+        updates.description = serializeStructuredRequisition(adjustedStructuredPayload);
       }
       if (updates.description && updates.description !== request.description) {
         await integrityAPI.saveAdjustedWithReason({
@@ -255,6 +258,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
           reason,
           beforeRequest: request,
           afterPatch: updates,
+          requisitionPayload: adjustedStructuredPayload,
           beforePayload: { description: request.description },
           afterPayload: { description: updates.description },
         });
@@ -332,6 +336,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
         reason,
         beforeRequest: request,
         afterPatch: patch,
+        requisitionPayload: nextStructured,
         beforePayload: {
           description: request.description,
           quantity: request.quantity,
@@ -493,6 +498,12 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
             Requisition — {request.item_name}
           </h2>
           <div className="flex items-center gap-2">
+            <Link
+              to={`${isDeptHead() ? '/dept-head' : '/faculty'}/requisition-integrity?requestId=${request.id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+            >
+              Timeline
+            </Link>
             <button
               type="button"
               onClick={onPrint}

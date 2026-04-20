@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { requestsAPI } from '../lib/supabaseApi';
+import { supabase } from '../lib/supabaseClient';
 import type { College, RequestWithRelations } from '../types/database';
 import { Eye, Loader2 } from 'lucide-react';
 import RequisitionViewModal from '../components/RequisitionViewModal';
@@ -17,8 +18,10 @@ export default function DeptHeadRequestHistory() {
   const [error, setError] = useState('');
   const [college, setCollege] = useState<College | null>(null);
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
+  const [search, setSearch] = useState('');
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadRows = async () => {
+  const loadRows = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -35,27 +38,56 @@ export default function DeptHeadRequestHistory() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile?.id]);
 
   useEffect(() => {
     void loadRows();
-  }, [profile?.id]);
+  }, [loadRows]);
 
-  const activeView = searchParams.get('view');
+  useEffect(() => {
+    const channel = supabase
+      .channel(`dept-head-requests-${profile?.id || 'anon'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        () => {
+          if (refreshTimer.current) clearTimeout(refreshTimer.current);
+          refreshTimer.current = setTimeout(() => {
+            void loadRows();
+          }, 350);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.id, loadRows]);
+
   const rawStatusTab = (searchParams.get('status') || '').toLowerCase();
-  const activeStatusTab: 'all' | 'pending' | 'approved' | 'procuring' =
-    rawStatusTab === 'pending' || rawStatusTab === 'approved' || rawStatusTab === 'procuring'
+  const activeStatusTab: 'all' | 'pending' | 'approved' | 'procuring' | 'history' | 'notifications' =
+    rawStatusTab === 'pending' ||
+    rawStatusTab === 'approved' ||
+    rawStatusTab === 'procuring' ||
+    rawStatusTab === 'history' ||
+    rawStatusTab === 'notifications'
       ? rawStatusTab
-      : activeView === 'new'
-        ? 'pending'
-        : 'all';
+      : 'all';
 
   const activeWorkflowRows = useMemo(
-    () => rows.filter((r) => !['ProcurementDone', 'Received', 'Completed'].includes(r.status)),
+    () =>
+      rows.filter(
+        (r) => !['Draft', 'ProcurementDone', 'Received', 'Completed'].includes(r.status)
+      ),
+    [rows]
+  );
+  const procurementHistoryRows = useMemo(
+    () => rows.filter((r) => ['ProcurementDone', 'Received', 'Completed'].includes(r.status)),
     [rows]
   );
 
-  const setStatusTab = (status: 'all' | 'pending' | 'approved' | 'procuring') => {
+  const setStatusTab = (status: 'all' | 'pending' | 'approved' | 'procuring' | 'history' | 'notifications') => {
     const next = new URLSearchParams(searchParams);
     next.delete('view');
     if (status === 'all') next.delete('status');
@@ -63,8 +95,8 @@ export default function DeptHeadRequestHistory() {
     setSearchParams(next);
   };
 
-  const filteredRows = useMemo(() => {
-    if (activeView === 'notifications') {
+  const statusFilteredRows = useMemo(() => {
+    if (activeStatusTab === 'notifications') {
       return activeWorkflowRows.filter((r) => ['Rejected', 'ProcurementFailed'].includes(r.status));
     }
     if (activeStatusTab === 'pending') {
@@ -76,19 +108,29 @@ export default function DeptHeadRequestHistory() {
     if (activeStatusTab === 'procuring') {
       return activeWorkflowRows.filter((r) => r.status === 'Procuring');
     }
+    if (activeStatusTab === 'history') {
+      return procurementHistoryRows;
+    }
     return activeWorkflowRows;
-  }, [activeWorkflowRows, activeView, activeStatusTab]);
+  }, [activeWorkflowRows, procurementHistoryRows, activeStatusTab]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return statusFilteredRows;
+    return statusFilteredRows.filter((r) => {
+      const requester = `${r.requester?.full_name || ''} ${r.requester?.faculty_department || ''}`.toLowerCase();
+      const rowText = `${r.item_name} ${r.ris_no || ''} ${r.sai_no || ''} ${r.status}`.toLowerCase();
+      return rowText.includes(q) || requester.includes(q);
+    });
+  }, [statusFilteredRows, search]);
 
   const subtitle = useMemo(() => {
-    if (activeView === 'notifications') {
+    if (activeStatusTab === 'notifications') {
       return 'Rejected and procurement-failed requests from your handled college.';
-    }
-    if (activeView === 'new') {
-      return 'New submitted requests waiting for your review. Drafts are excluded.';
     }
     if (!college?.name) return 'Track requests and status updates.';
     return `Requisitions from your college (${college.name}). Open a row to read the full submitted form.`;
-  }, [college?.name, activeView]);
+  }, [college?.name, activeStatusTab]);
 
   return (
     <div className="space-y-6">
@@ -97,13 +139,15 @@ export default function DeptHeadRequestHistory() {
         <p className="text-base text-gray-500 mt-1">{subtitle}</p>
       </div>
 
-      {activeView !== 'notifications' && (
+      <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
           {([
             { id: 'all', label: 'All' },
             { id: 'pending', label: 'Pending' },
             { id: 'approved', label: 'Approved' },
             { id: 'procuring', label: 'Procuring' },
+            { id: 'history', label: 'Procurement Completed' },
+            { id: 'notifications', label: 'Notifications' },
           ] as const).map((tab) => {
             const active = activeStatusTab === tab.id;
             return (
@@ -122,7 +166,15 @@ export default function DeptHeadRequestHistory() {
             );
           })}
         </div>
-      )}
+        <div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search RIS/SAI, requester, department, item..."
+            className="w-full md:w-[420px] px-3 py-2 rounded-lg border border-gray-300 text-sm"
+          />
+        </div>
+      </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{error}</div>}
 
@@ -149,7 +201,7 @@ export default function DeptHeadRequestHistory() {
               {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
-                    {activeView === 'notifications'
+                    {activeStatusTab === 'notifications'
                       ? 'No notifications found.'
                       : activeStatusTab === 'pending'
                       ? 'No pending requests found.'
@@ -157,6 +209,8 @@ export default function DeptHeadRequestHistory() {
                       ? 'No approved requests found.'
                       : activeStatusTab === 'procuring'
                       ? 'No procuring requests found.'
+                      : activeStatusTab === 'history'
+                      ? 'No procurement history yet.'
                       : 'No requests found.'}
                   </td>
                 </tr>

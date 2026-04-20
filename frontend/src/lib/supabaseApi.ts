@@ -1098,6 +1098,7 @@ const canonicalizeRequisitionDescription = (description: string | null | undefin
 const canonicalizeRequestPayloadForIntegrity = (requestLike: {
   item_name?: string | null;
   description?: string | null;
+  requisition_payload?: Record<string, unknown> | null;
   quantity?: number | null;
   unit_price?: number | null;
   total_price?: number | null;
@@ -1107,6 +1108,7 @@ const canonicalizeRequestPayloadForIntegrity = (requestLike: {
   JSON.stringify({
     item_name: normalizeText(requestLike.item_name),
     description: canonicalizeRequisitionDescription(requestLike.description),
+    requisition_payload: requestLike.requisition_payload ?? null,
     quantity: Number(requestLike.quantity || 0),
     unit_price: Number(requestLike.unit_price || 0),
     total_price: Number(requestLike.total_price || 0),
@@ -1125,6 +1127,7 @@ const sha256Hex = async (text: string): Promise<string> => {
 const computeIntegrityHash = async (requestLike: {
   item_name?: string | null;
   description?: string | null;
+  requisition_payload?: Record<string, unknown> | null;
   quantity?: number | null;
   unit_price?: number | null;
   total_price?: number | null;
@@ -1261,6 +1264,7 @@ export const requestsAPI = {
     supplier_id?: string;
     item_name: string;
     description?: string;
+    requisition_payload?: Record<string, unknown> | null;
     quantity: number;
     unit_price: number;
     status?: RequestStatus;
@@ -1335,25 +1339,9 @@ export const requestsAPI = {
 
   // Workflow actions
   submit: async (id: string): Promise<Request> => {
-    const existing = await requestsAPI.getById(id);
-    if (!existing) throw new Error('Request not found');
-    const payloadHash = await computeIntegrityHash(existing);
-    const updated = await requestsAPI.update(id, {
-      status: 'Pending',
-      submitted_payload_hash: existing.submitted_payload_hash || payloadHash,
-      latest_payload_hash: payloadHash,
-      last_integrity_reason: existing.last_integrity_reason ?? 'Submitted by requester.',
-    });
-    await integrityAPI.recordEvent({
-      requestId: id,
-      eventType: 'submit_locked',
-      reason: 'Requester submitted requisition (now immutable for faculty edits).',
-      beforePayload: { status: existing.status },
-      afterPayload: { status: 'Pending' },
-      payloadHashBefore: existing.latest_payload_hash || payloadHash,
-      payloadHashAfter: payloadHash,
-    });
-    return updated;
+    const { data, error } = await supabase.rpc('request_submit_atomic', { p_request_id: id });
+    if (error) throw error;
+    return data as Request;
   },
 
   approve: async (id: string): Promise<Request> => {
@@ -1408,24 +1396,12 @@ export const requestsAPI = {
   rejectWithReason: async (id: string, reason: string): Promise<Request> => {
     const trimmed = reason.trim();
     if (!trimmed) throw new Error('Reason is required to decline a requisition.');
-    const existing = await requestsAPI.getById(id);
-    if (!existing) throw new Error('Request not found');
-    const updated = await requestsAPI.update(id, {
-      status: 'Rejected',
-      rejection_reason: trimmed,
-      approved_at: new Date().toISOString(),
-      last_integrity_reason: trimmed,
+    const { data, error } = await supabase.rpc('request_decline_with_reason_atomic', {
+      p_request_id: id,
+      p_reason: trimmed,
     });
-    await integrityAPI.recordEvent({
-      requestId: id,
-      eventType: 'declined_with_reason',
-      reason: trimmed,
-      beforePayload: { status: existing.status },
-      afterPayload: { status: 'Rejected' },
-      payloadHashBefore: existing.latest_payload_hash,
-      payloadHashAfter: existing.latest_payload_hash,
-    });
-    return updated;
+    if (error) throw error;
+    return data as Request;
   },
 
   /** College admin: approved request is being procured (department confirms receipt only after procurement done). */
@@ -1457,23 +1433,12 @@ export const requestsAPI = {
   markProcurementFailedWithReason: async (id: string, reason: string): Promise<Request> => {
     const trimmed = reason.trim();
     if (!trimmed) throw new Error('Reason is required when marking procurement as failed.');
-    const existing = await requestsAPI.getById(id);
-    if (!existing) throw new Error('Request not found');
-    const updated = await requestsAPI.update(id, {
-      status: 'ProcurementFailed',
-      rejection_reason: trimmed,
-      last_integrity_reason: trimmed,
+    const { data, error } = await supabase.rpc('request_procurement_failed_with_reason_atomic', {
+      p_request_id: id,
+      p_reason: trimmed,
     });
-    await integrityAPI.recordEvent({
-      requestId: id,
-      eventType: 'procurement_failed_with_reason',
-      reason: trimmed,
-      beforePayload: { status: existing.status },
-      afterPayload: { status: 'ProcurementFailed' },
-      payloadHashBefore: existing.latest_payload_hash,
-      payloadHashAfter: existing.latest_payload_hash,
-    });
-    return updated;
+    if (error) throw error;
+    return data as Request;
   },
 
   markReceived: async (id: string): Promise<Request> => {
@@ -1523,26 +1488,13 @@ export const requestsAPI = {
   approveWithReason: async (id: string, reason: string, collegeBudgetTypeId: string | null = null): Promise<Request> => {
     const trimmed = reason.trim();
     if (!trimmed) throw new Error('Reason is required to approve requisition.');
-    const existing = await requestsAPI.getById(id);
-    if (!existing) throw new Error('Request not found');
-    const { data: { user } } = await supabase.auth.getUser();
-    const updated = await requestsAPI.update(id, {
-      status: 'Approved',
-      approved_by: user?.id ?? null,
-      approved_at: new Date().toISOString(),
-      college_budget_type_id: collegeBudgetTypeId,
-      last_integrity_reason: trimmed,
+    const { data, error } = await supabase.rpc('request_approve_with_reason_atomic', {
+      p_request_id: id,
+      p_reason: trimmed,
+      p_college_budget_type_id: collegeBudgetTypeId,
     });
-    await integrityAPI.recordEvent({
-      requestId: id,
-      eventType: 'approved_with_reason',
-      reason: trimmed,
-      beforePayload: { status: existing.status },
-      afterPayload: { status: 'Approved' },
-      payloadHashBefore: existing.latest_payload_hash,
-      payloadHashAfter: existing.latest_payload_hash,
-    });
-    return updated;
+    if (error) throw error;
+    return data as Request;
   }
 };
 
@@ -1593,44 +1545,28 @@ export const integrityAPI = {
     reason: string;
     beforeRequest: RequestWithRelations;
     afterPatch: Partial<Request>;
+    requisitionPayload?: Record<string, unknown> | null;
     beforePayload?: Record<string, unknown> | null;
     afterPayload?: Record<string, unknown> | null;
   }): Promise<Request> => {
     const trimmed = params.reason.trim();
     if (!trimmed) throw new Error('Reason is required for requisition edits.');
+    const description = params.afterPatch.description ?? params.beforeRequest.description ?? '';
+    const quantity = Number(params.afterPatch.quantity ?? params.beforeRequest.quantity ?? 0);
+    const unitPrice = Number(params.afterPatch.unit_price ?? params.beforeRequest.unit_price ?? 0);
+    const status = params.afterPatch.status ?? null;
 
-    const mergedForHash = {
-      item_name: params.afterPatch.item_name ?? params.beforeRequest.item_name,
-      description: params.afterPatch.description ?? params.beforeRequest.description,
-      quantity: params.afterPatch.quantity ?? params.beforeRequest.quantity,
-      unit_price: params.afterPatch.unit_price ?? params.beforeRequest.unit_price,
-      total_price:
-        params.afterPatch.total_price ??
-        (params.beforeRequest.total_price ?? 0),
-      budget_fund_source_id:
-        params.afterPatch.budget_fund_source_id ?? params.beforeRequest.budget_fund_source_id,
-      college_budget_type_id:
-        params.afterPatch.college_budget_type_id ?? params.beforeRequest.college_budget_type_id,
-    };
-    const afterHash = await computeIntegrityHash(mergedForHash);
-    const beforeHash =
-      params.beforeRequest.latest_payload_hash ||
-      (await computeIntegrityHash(params.beforeRequest));
-    const updated = await requestsAPI.update(params.requestId, {
-      ...params.afterPatch,
-      latest_payload_hash: afterHash,
-      last_integrity_reason: trimmed,
+    const { data, error } = await supabase.rpc('request_adjust_with_reason_atomic', {
+      p_request_id: params.requestId,
+      p_description: description,
+      p_requisition_payload: (params.requisitionPayload ?? null) as any,
+      p_quantity: quantity,
+      p_unit_price: unitPrice,
+      p_reason: trimmed,
+      p_status: status,
     });
-    await integrityAPI.recordEvent({
-      requestId: params.requestId,
-      eventType: 'admin_edit',
-      reason: trimmed,
-      beforePayload: params.beforePayload ?? null,
-      afterPayload: params.afterPayload ?? null,
-      payloadHashBefore: beforeHash,
-      payloadHashAfter: afterHash,
-    });
-    return updated;
+    if (error) throw error;
+    return data as Request;
   },
 };
 

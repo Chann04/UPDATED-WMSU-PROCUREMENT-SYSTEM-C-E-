@@ -118,7 +118,7 @@ export default function DeptHeadHome() {
               </p>
             </Link>
 
-            <Link to="/dept-head/request-history?view=notifications" className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <Link to="/dept-head/request-history?status=notifications" className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">Notification</p>
                 <Bell className="w-5 h-5 text-red-900" />
@@ -127,7 +127,7 @@ export default function DeptHeadHome() {
               <p className="text-xs text-gray-500 mt-1">Items need your attention</p>
             </Link>
 
-            <Link to="/dept-head/request-history?view=new" className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <Link to="/dept-head/request-history?status=pending" className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">New Request View</p>
                 <PlusCircle className="w-5 h-5 text-red-900" />

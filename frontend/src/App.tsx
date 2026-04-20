@@ -20,7 +20,6 @@ import FacultyRequestHistory from './pages/FacultyRequestHistory';
 import DeptHeadHome from './pages/DeptHeadHome';
 import DeptHeadBudget from './pages/DeptHeadBudget';
 import DeptHeadRequestHistory from './pages/DeptHeadRequestHistory';
-import DeptHeadProcurementHistory from './pages/DeptHeadProcurementHistory';
 import DeptHeadDepartments from './pages/DeptHeadDepartments';
 import DeptHeadHelp from './pages/DeptHeadHelp';
 import RegistrationRequests from './pages/RegistrationRequests';
@@ -59,7 +58,6 @@ function App() {
                 element={<RegistrationRequests />}
               />
               <Route path="/dept-head/request-history" element={<DeptHeadRequestHistory />} />
-              <Route path="/dept-head/procurement-history" element={<DeptHeadProcurementHistory />} />
               <Route path="/dept-head/requisition-integrity" element={<RequisitionIntegrityTimeline />} />
               <Route path="/dept-head/help" element={<DeptHeadHelp />} />
             </Route>

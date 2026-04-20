@@ -85,7 +85,7 @@ LANGUAGE sql
 IMMUTABLE
 AS $$
   SELECT encode(
-    digest(
+    extensions.digest(
       coalesce(trim(p_item_name), '') || '|' ||
       coalesce(trim(p_description), '') || '|' ||
       coalesce(p_quantity::text, '0') || '|' ||

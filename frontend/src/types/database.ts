@@ -296,6 +296,7 @@ export interface Database {
           college_budget_type_id: string | null;
           quantity_received: number | null;
           partial_delivery_remarks: string | null;
+          requisition_payload: Json | null;
           submitted_payload_hash: string | null;
           latest_payload_hash: string | null;
           integrity_version: number;
@@ -336,6 +337,7 @@ export interface Database {
           college_budget_type_id?: string | null;
           quantity_received?: number | null;
           partial_delivery_remarks?: string | null;
+          requisition_payload?: Json | null;
           submitted_payload_hash?: string | null;
           latest_payload_hash?: string | null;
           integrity_version?: number;
@@ -374,6 +376,7 @@ export interface Database {
           college_budget_type_id?: string | null;
           quantity_received?: number | null;
           partial_delivery_remarks?: string | null;
+          requisition_payload?: Json | null;
           submitted_payload_hash?: string | null;
           latest_payload_hash?: string | null;
           integrity_version?: number;
@@ -681,6 +684,34 @@ export interface Database {
       get_user_role: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      request_submit_atomic: {
+        Args: { p_request_id: string };
+        Returns: Database['public']['Tables']['requests']['Row'];
+      };
+      request_approve_with_reason_atomic: {
+        Args: { p_request_id: string; p_reason: string; p_college_budget_type_id?: string | null };
+        Returns: Database['public']['Tables']['requests']['Row'];
+      };
+      request_decline_with_reason_atomic: {
+        Args: { p_request_id: string; p_reason: string };
+        Returns: Database['public']['Tables']['requests']['Row'];
+      };
+      request_procurement_failed_with_reason_atomic: {
+        Args: { p_request_id: string; p_reason: string };
+        Returns: Database['public']['Tables']['requests']['Row'];
+      };
+      request_adjust_with_reason_atomic: {
+        Args: {
+          p_request_id: string;
+          p_description: string;
+          p_requisition_payload: Json | null;
+          p_quantity: number;
+          p_unit_price: number;
+          p_reason: string;
+          p_status?: string | null;
+        };
+        Returns: Database['public']['Tables']['requests']['Row'];
       };
     };
   };

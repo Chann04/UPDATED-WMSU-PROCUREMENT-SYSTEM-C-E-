@@ -10,7 +10,6 @@ import {
   Layers,
   LayoutDashboard,
   History,
-  Archive,
   PlusCircle,
   UserPlus,
 } from 'lucide-react';
@@ -38,7 +37,6 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
       roles: ['DeptHead'],
     },
     { name: 'Request & History', icon: History, path: '/dept-head/request-history', roles: ['DeptHead'] },
-    { name: 'Procurement History', icon: Archive, path: '/dept-head/procurement-history', roles: ['DeptHead'] },
     { name: 'Dashboard', icon: LayoutDashboard, path: '/faculty/dashboard', roles: ['Faculty'] },
     { name: 'New Request', icon: PlusCircle, path: '/faculty/new-request', roles: ['Faculty'] },
     { name: 'Request & History', icon: History, path: '/faculty/request-history', roles: ['Faculty'] },

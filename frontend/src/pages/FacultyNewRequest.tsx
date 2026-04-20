@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { procurementBudgetAPI, requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { CenteredAlert } from '../components/CenteredAlert';
-import { Loader2, Lock, PlusCircle, Send, Trash2 } from 'lucide-react';
+import { Copy, Loader2, Lock, Pencil, PlusCircle, Send, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { parseRequisitionDescription } from '../lib/parseRequisitionDescription';
 
 const money = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
 type RequisitionLine = {
@@ -47,6 +48,9 @@ const UNIT_OF_MEASURE_OPTIONS = [
   'unit',
 ] as const;
 
+const NUMERIC_ONLY_RE = /^[\d.,]+$/;
+const DEFAULT_UNIT_FALLBACK = 'pcs';
+
 export default function FacultyNewRequest() {
   const { profile } = useAuth();
   // Division = user's College (profile.department); Office/Section = user's
@@ -86,6 +90,7 @@ export default function FacultyNewRequest() {
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [rows, setRows] = useState<RequestWithRelations[]>([]);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -158,6 +163,7 @@ export default function FacultyNewRequest() {
     setReceivedByName('');
     setReceivedByDesignation('');
     setReceivedByDate('');
+    setEditingDraftId(null);
 
     setLines([newLine()]);
     setFundSourceId('');
@@ -194,6 +200,7 @@ export default function FacultyNewRequest() {
   const buildRequisitionCreatePayload = (): { error: string } | {
     item_name: string;
     description: string;
+    requisition_payload: Record<string, unknown>;
     quantity: number;
     unit_price: number;
     budget_fund_source_id: string | null;
@@ -202,6 +209,13 @@ export default function FacultyNewRequest() {
     const validLines = computedRows.filter((l) => l.itemDescription.trim() && l.qty > 0);
     if (validLines.length === 0) {
       return { error: 'Add at least one line item with item description and quantity.' };
+    }
+    const hasNumericOnlyUnit = validLines.some((l) => {
+      const u = (l.unit || '').trim();
+      return u !== '' && NUMERIC_ONLY_RE.test(u);
+    });
+    if (hasNumericOnlyUnit) {
+      return { error: 'One or more Unit values are numeric-only. Use units like pcs, box, kg, ream.' };
     }
 
     const vBudget = validateBudgetLink(grandTotal);
@@ -243,10 +257,33 @@ export default function FacultyNewRequest() {
     // label. Once the trigger runs the history view pulls the real number from
     // `requests.ris_no`.
     const requestTitle = `Requisition - ${officeSection || division || 'Draft'}`;
+    const requisitionPayload = {
+      header: {
+        fundingSource: fundLabel || '-',
+        unitAllotment: typeLabel || '-',
+        division: division || '-',
+        officeSection: officeSection || '-',
+        purpose: purpose || '-',
+      },
+      items: validLines.map((l, i) => ({
+        lineNo: i + 1,
+        unit: l.unit || '-',
+        item: l.itemDescription,
+        qty: l.qty,
+        unitPrice: Number(l.unitPrice || 0),
+      })),
+      signatories: {
+        requestedBy: { name: requestedByName || '-', designation: requestedByDesignation || '-', date: requestedByDate || '-' },
+        approvedBy: { name: approvedByName || '-', designation: approvedByDesignation || '-', date: approvedByDate || '-' },
+        issuedBy: { name: issuedByName || '-', designation: issuedByDesignation || '-', date: issuedByDate || '-' },
+        receivedBy: { name: '-', designation: '-', date: '-' },
+      },
+    };
 
     return {
       item_name: requestTitle.slice(0, 120),
       description: descriptionText,
+      requisition_payload: requisitionPayload,
       quantity: Math.max(1, Math.round(totalQty)),
       unit_price: Number(avgUnitPrice.toFixed(2)),
       budget_fund_source_id: fundSourceId.trim() || null,
@@ -267,13 +304,20 @@ export default function FacultyNewRequest() {
 
     setLoading(true);
     try {
-      await requestsAPI.create({
-        ...payload,
-        status: 'Draft',
-      });
+      if (editingDraftId) {
+        await requestsAPI.update(editingDraftId, {
+          ...payload,
+          status: 'Draft',
+        });
+      } else {
+        await requestsAPI.create({
+          ...payload,
+          status: 'Draft',
+        });
+      }
       resetForm();
       await loadMine();
-      setSuccess('Draft request created.');
+      setSuccess(editingDraftId ? 'Draft request updated.' : 'Draft request created.');
     } catch (err: any) {
       setError(err?.message || 'Failed to create request.');
     } finally {
@@ -318,6 +362,88 @@ export default function FacultyNewRequest() {
       setSuccess('Request submitted for approval.');
     } catch (err: any) {
       setError(err?.message || 'Failed to submit request.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onEditDraft = (draft: RequestWithRelations) => {
+    const parsed = parseRequisitionDescription(draft.description);
+    if (parsed.kind !== 'structured') {
+      setError('This draft cannot be edited in structured mode. Please recreate it.');
+      return;
+    }
+    const { header, items, signatories } = parsed;
+    setPurpose(header['Purpose'] || '');
+    setRequestedByName(signatories.requestedBy.name === '-' ? '' : signatories.requestedBy.name);
+    setRequestedByDesignation(signatories.requestedBy.designation === '-' ? '' : signatories.requestedBy.designation);
+    setRequestedByDate(signatories.requestedBy.date === '-' ? '' : signatories.requestedBy.date);
+    setApprovedByName(signatories.approvedBy.name === '-' ? '' : signatories.approvedBy.name);
+    setApprovedByDesignation(signatories.approvedBy.designation === '-' ? '' : signatories.approvedBy.designation);
+    setApprovedByDate(signatories.approvedBy.date === '-' ? '' : signatories.approvedBy.date);
+    setIssuedByName(signatories.issuedBy.name === '-' ? '' : signatories.issuedBy.name);
+    setIssuedByDesignation(signatories.issuedBy.designation === '-' ? '' : signatories.issuedBy.designation);
+    setIssuedByDate(signatories.issuedBy.date === '-' ? '' : signatories.issuedBy.date);
+    setLines(
+      items.length > 0
+        ? items.map((it) => ({
+            // Auto-fix legacy drafts where Unit was mistakenly saved as a number
+            // (e.g. "500"). Keep valid unit strings untouched.
+            unit:
+              it.unit === '-'
+                ? ''
+                : NUMERIC_ONLY_RE.test((it.unit || '').trim())
+                  ? DEFAULT_UNIT_FALLBACK
+                  : it.unit,
+            itemDescription: it.item,
+            quantity: String(it.qty || ''),
+            unitPrice: String(it.unitPrice || ''),
+          }))
+        : [newLine()]
+    );
+    setFundSourceId(draft.budget_fund_source_id || '');
+    setBudgetTypeId(draft.college_budget_type_id || '');
+    setEditingDraftId(draft.id);
+    setSuccess('Loaded draft for editing.');
+  };
+
+  const onDeleteDraft = async (draft: RequestWithRelations) => {
+    const confirmed = window.confirm(`Delete draft "${draft.item_name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      await requestsAPI.delete(draft.id);
+      if (editingDraftId === draft.id) resetForm();
+      await loadMine();
+      setSuccess('Draft deleted.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete draft.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onDuplicateDraft = async (draft: RequestWithRelations) => {
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      await requestsAPI.create({
+        item_name: `${draft.item_name} (Copy)`.slice(0, 120),
+        description: draft.description || '',
+        requisition_payload: (draft.requisition_payload as Record<string, unknown> | null) ?? null,
+        quantity: Number(draft.quantity || 1),
+        unit_price: Number(draft.unit_price || 0),
+        budget_fund_source_id: draft.budget_fund_source_id || null,
+        college_budget_type_id: draft.college_budget_type_id || null,
+        status: 'Draft',
+      });
+      await loadMine();
+      setSuccess('Draft duplicated.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to duplicate draft.');
     } finally {
       setLoading(false);
     }
@@ -489,7 +615,7 @@ export default function FacultyNewRequest() {
                   // bare number into Unit. That's almost always a mix-up with
                   // Req Qty or Unit Price.
                   const unitLooksLikeNumber =
-                    line.unit.trim() !== '' && /^[\d.,]+$/.test(line.unit.trim());
+                    line.unit.trim() !== '' && NUMERIC_ONLY_RE.test(line.unit.trim());
                   return (
                   <tr key={idx} className="border-t border-gray-100 align-top">
                     <td className="px-2 py-2">
@@ -683,6 +809,7 @@ export default function FacultyNewRequest() {
               <div className="text-sm text-gray-600">
                 Requested Qty: <span className="font-semibold text-gray-900">{totalQty}</span> | Estimated total:{' '}
                 <span className="font-semibold text-gray-900">{money(grandTotal)}</span>
+                {editingDraftId ? <span className="ml-2 text-amber-700">(Editing draft)</span> : null}
               </div>
               <div className="flex flex-wrap gap-3 justify-end">
                 <button
@@ -691,8 +818,18 @@ export default function FacultyNewRequest() {
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-900 text-red-900 bg-white hover:bg-red-50 disabled:opacity-50 min-w-[200px]"
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
-                  Create requisition draft
+                  {editingDraftId ? 'Save draft changes' : 'Create requisition draft'}
                 </button>
+                {editingDraftId ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={resetForm}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 min-w-[200px]"
+                  >
+                    Cancel editing
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={loading}
@@ -728,14 +865,43 @@ export default function FacultyNewRequest() {
                     {r.quantity} × {money(r.unit_price)} = <span className="font-medium text-gray-700">{money(r.total_price)}</span>
                   </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => void onSubmitDraft(r.id)}
-                  className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
-                >
-                  Submit
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => onEditDraft(r)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void onDuplicateDraft(r)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void onDeleteDraft(r)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-300 text-red-800 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void onSubmitDraft(r.id)}
+                    className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                  >
+                    Submit
+                  </button>
+                </div>
               </div>
             ))}
           </div>
