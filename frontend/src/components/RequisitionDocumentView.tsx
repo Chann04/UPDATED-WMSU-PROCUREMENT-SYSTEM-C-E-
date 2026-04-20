@@ -111,11 +111,12 @@ export default function RequisitionDocumentView({
                 <td className="px-3 py-2 border border-gray-300 font-medium text-gray-900">
                   {headerValue('Office / Section', 'Office/Section')}
                 </td>
-                <td className="px-3 py-2 border border-gray-300 font-medium text-gray-900">
-                  {headerValue('RIS No', 'RIS No.', 'RIS NO')}
+                <td className="px-3 py-2 border border-gray-300 font-medium text-gray-900 font-mono">
+                  {/* Auto-generated server-side; fall back to legacy description header for old rows. */}
+                  {request.ris_no?.trim() || headerValue('RIS No', 'RIS No.', 'RIS NO')}
                 </td>
-                <td className="px-3 py-2 border border-gray-300 font-medium text-gray-900">
-                  {headerValue('SAI No', 'SAI No.', 'SAI NO')}
+                <td className="px-3 py-2 border border-gray-300 font-medium text-gray-900 font-mono">
+                  {request.sai_no?.trim() || headerValue('SAI No', 'SAI No.', 'SAI NO')}
                 </td>
               </tr>
               <tr className="bg-gray-50">

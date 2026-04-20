@@ -145,6 +145,10 @@ export function parseRequisitionDescription(description: string | null | undefin
 export const HEADER_FIELD_ORDER = [
   { key: 'Division', label: 'Division' },
   { key: 'Office/Section', label: 'Office / Section' },
+  // RIS No / SAI No moved to dedicated `requests.ris_no` / `requests.sai_no`
+  // columns (auto-generated on submit). They are rendered from the Request row
+  // rather than parsed out of the description. Kept parseable as legacy fields
+  // so older requisitions still display their numbers.
   { key: 'RIS No', label: 'RIS No.' },
   { key: 'SAI No', label: 'SAI No.' },
   { key: 'Purpose', label: 'Purpose' },
@@ -156,8 +160,7 @@ const SERIALIZE_HEADER_FIRST = [
   'Unit allotment / sub-category',
   'Division',
   'Office/Section',
-  'RIS No',
-  'SAI No',
+  // RIS / SAI intentionally omitted from new serialized descriptions.
   'Purpose',
 ] as const;
 

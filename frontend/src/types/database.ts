@@ -266,6 +266,10 @@ export interface Database {
           unit_price: number;
           total_price: number;
           status: RequestStatus;
+          /** Auto-generated when status first transitions to Pending (format: RIS-YYYY-0001). */
+          ris_no: string | null;
+          /** Auto-generated when status first transitions to Pending (format: SAI-YYYY-0001). */
+          sai_no: string | null;
           rejection_reason: string | null;
           approved_by: string | null;
           approved_at: string | null;
@@ -298,6 +302,10 @@ export interface Database {
           unit_price: number;
           total_price?: number;
           status?: RequestStatus;
+          /** Auto-assigned by the `requests_assign_ris_sai` trigger — do not set from client. */
+          ris_no?: string | null;
+          /** Auto-assigned by the `requests_assign_ris_sai` trigger — do not set from client. */
+          sai_no?: string | null;
           rejection_reason?: string | null;
           approved_by?: string | null;
           approved_at?: string | null;
@@ -328,6 +336,10 @@ export interface Database {
           quantity?: number;
           unit_price?: number;
           status?: RequestStatus;
+          /** Server-assigned; should not be sent from client. */
+          ris_no?: string | null;
+          /** Server-assigned; should not be sent from client. */
+          sai_no?: string | null;
           rejection_reason?: string | null;
           approved_by?: string | null;
           approved_at?: string | null;

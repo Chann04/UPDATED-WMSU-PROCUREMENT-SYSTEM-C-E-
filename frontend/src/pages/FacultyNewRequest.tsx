@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { procurementBudgetAPI, requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { CenteredAlert } from '../components/CenteredAlert';
-import { Loader2, PlusCircle, Send, Trash2 } from 'lucide-react';
+import { Loader2, Lock, PlusCircle, Send, Trash2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const money = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
 type RequisitionLine = {
@@ -21,11 +22,45 @@ const newLine = (): RequisitionLine => ({
   unitPrice: '',
 });
 
+/**
+ * Common unit-of-measure options offered in the line-item datalist. Faculty can
+ * still type a custom value (e.g. "bottle"); the datalist is a suggestion list,
+ * not a hard whitelist.
+ */
+const UNIT_OF_MEASURE_OPTIONS = [
+  'pc',
+  'pcs',
+  'set',
+  'pack',
+  'box',
+  'pair',
+  'roll',
+  'ream',
+  'bottle',
+  'can',
+  'sachet',
+  'kg',
+  'g',
+  'L',
+  'mL',
+  'm',
+  'cm',
+  'lot',
+  'unit',
+] as const;
+
 export default function FacultyNewRequest() {
-  const [division, setDivision] = useState('');
-  const [officeSection, setOfficeSection] = useState('');
-  const [risNo, setRisNo] = useState('');
-  const [saiNo, setSaiNo] = useState('');
+  const { profile } = useAuth();
+  // Division = user's College (profile.department); Office/Section = user's
+  // Department (profile.faculty_department). These are locked to the signed-in
+  // user's actual assignment so faculty can't mis-route requisitions.
+  const division = profile?.department?.trim() || '';
+  const officeSection = profile?.faculty_department?.trim() || '';
+  const profileReady = !!profile;
+
+  // RIS No. / SAI No. are assigned by the database trigger
+  // `requests_assign_ris_sai` when the request transitions to `Pending`.
+  // They are intentionally NOT captured from the UI.
   const [purpose, setPurpose] = useState('');
 
   const [requestedByName, setRequestedByName] = useState('');
@@ -106,10 +141,8 @@ export default function FacultyNewRequest() {
   const grandTotal = useMemo(() => computedRows.reduce((s, r) => s + r.rowTotal, 0), [computedRows]);
 
   const resetForm = () => {
-    setDivision('');
-    setOfficeSection('');
-    setRisNo('');
-    setSaiNo('');
+    // Division / Office-Section come from the profile and must not be cleared.
+    // RIS / SAI numbers are assigned server-side on submit.
     setPurpose('');
 
     setRequestedByName('');
@@ -188,8 +221,8 @@ export default function FacultyNewRequest() {
       typeLabel ? `Unit allotment / sub-category: ${typeLabel}` : null,
       `Division: ${division || '-'}`,
       `Office/Section: ${officeSection || '-'}`,
-      `RIS No: ${risNo || '-'}`,
-      `SAI No: ${saiNo || '-'}`,
+      // RIS No / SAI No are auto-assigned server-side and rendered from the
+      // request row's columns, not from the description text.
       `Purpose: ${purpose || '-'}`,
       '',
       'Requisition Items:',
@@ -208,7 +241,10 @@ export default function FacultyNewRequest() {
       .join('\n');
 
     const avgUnitPrice = totalQty > 0 ? grandTotal / totalQty : 0;
-    const requestTitle = `RIS ${risNo || 'N/A'} - ${officeSection || division || 'Requisition'}`;
+    // RIS No. is assigned on submit; until then use office/division as a human
+    // label. Once the trigger runs the history view pulls the real number from
+    // `requests.ris_no`.
+    const requestTitle = `Requisition - ${officeSection || division || 'Draft'}`;
 
     return {
       item_name: requestTitle.slice(0, 120),
@@ -304,37 +340,46 @@ export default function FacultyNewRequest() {
         <form onSubmit={onCreateDraft} className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Division</label>
-              <input
-                value={division}
-                onChange={(e) => setDivision(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
-                placeholder="e.g., OPD"
-              />
+              <label className="block text-sm font-medium text-gray-800 mb-1">
+                Division
+                <span className="ml-1 text-xs font-normal text-gray-400">(from your profile)</span>
+              </label>
+              <div
+                aria-readonly="true"
+                title="Locked to your assigned college"
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 flex items-center justify-between gap-2"
+              >
+                <span className="truncate">
+                  {profileReady ? (division || '—') : 'Loading…'}
+                </span>
+                <Lock className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden />
+              </div>
+              <input type="hidden" name="division" value={division} readOnly />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Office / Section</label>
-              <input
-                value={officeSection}
-                onChange={(e) => setOfficeSection(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
-              />
+              <label className="block text-sm font-medium text-gray-800 mb-1">
+                Office / Section
+                <span className="ml-1 text-xs font-normal text-gray-400">(from your profile)</span>
+              </label>
+              <div
+                aria-readonly="true"
+                title="Locked to your assigned department"
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 flex items-center justify-between gap-2"
+              >
+                <span className="truncate">
+                  {profileReady ? (officeSection || '—') : 'Loading…'}
+                </span>
+                <Lock className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden />
+              </div>
+              <input type="hidden" name="officeSection" value={officeSection} readOnly />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">RIS No.</label>
-              <input
-                value={risNo}
-                onChange={(e) => setRisNo(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">SAI No.</label>
-              <input
-                value={saiNo}
-                onChange={(e) => setSaiNo(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
-              />
+            <div className="md:col-span-2">
+              <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <span className="font-medium text-gray-700">RIS No.</span> and{' '}
+                <span className="font-medium text-gray-700">SAI No.</span> are automatically
+                generated in the format <code className="font-mono">RIS-YYYY-0001</code> when the
+                request is sent, and will appear in your Request &amp; History.
+              </p>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-800 mb-1">Purpose</label>
@@ -420,12 +465,21 @@ export default function FacultyNewRequest() {
             </div>
           )}
 
+          <datalist id="requisition-unit-options">
+            {UNIT_OF_MEASURE_OPTIONS.map((u) => (
+              <option key={u} value={u} />
+            ))}
+          </datalist>
+
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
             <table className="min-w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Stock No</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                    Unit
+                    <span className="ml-1 text-[10px] font-normal normal-case text-gray-400">(e.g. pcs, box, kg)</span>
+                  </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Item / Description</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Req Qty</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Est Unit Price</th>
@@ -433,8 +487,14 @@ export default function FacultyNewRequest() {
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line, idx) => (
-                  <tr key={idx} className="border-t border-gray-100">
+                {lines.map((line, idx) => {
+                  // Soft validation: warn (non-blocking) when the user typed a
+                  // bare number into Unit. That's almost always a mix-up with
+                  // Req Qty or Unit Price.
+                  const unitLooksLikeNumber =
+                    line.unit.trim() !== '' && /^[\d.,]+$/.test(line.unit.trim());
+                  return (
+                  <tr key={idx} className="border-t border-gray-100 align-top">
                     <td className="px-2 py-2">
                       <input
                         value={line.stockNo}
@@ -444,10 +504,23 @@ export default function FacultyNewRequest() {
                     </td>
                     <td className="px-2 py-2">
                       <input
+                        list="requisition-unit-options"
                         value={line.unit}
                         onChange={(e) => updateLine(idx, 'unit', e.target.value)}
-                        className="w-20 px-2 py-1.5 rounded border border-gray-300"
+                        placeholder="pcs"
+                        maxLength={12}
+                        aria-invalid={unitLooksLikeNumber || undefined}
+                        className={`w-24 px-2 py-1.5 rounded border ${
+                          unitLooksLikeNumber
+                            ? 'border-amber-400 bg-amber-50 focus:ring-2 focus:ring-amber-400'
+                            : 'border-gray-300'
+                        }`}
                       />
+                      {unitLooksLikeNumber ? (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Numbers go in <strong>Req Qty</strong> or <strong>Est Unit Price</strong>. Use a unit of measure here (e.g. <em>pcs</em>).
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-2 py-2">
                       <input
@@ -488,7 +561,8 @@ export default function FacultyNewRequest() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

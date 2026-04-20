@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { collegesAPI, requestsAPI } from '../lib/supabaseApi';
 import type { College, RequestWithRelations } from '../types/database';
 import { Bell, Building2, Loader2, PlusCircle, Wallet } from 'lucide-react';
+import AnalyticsPanel from '../components/AnalyticsPanel';
 
 /** Home for signed-in DeptHead users. */
 export default function DeptHeadHome() {
@@ -135,6 +136,13 @@ export default function DeptHeadHome() {
               <p className="text-xs text-gray-500 mt-1">Pending requests only</p>
             </Link>
           </div>
+
+          <AnalyticsPanel
+            requests={requests}
+            budgetTotal={budgetTotal}
+            subheading="Budget utilization, pipeline health, spend trend, and top categories for your college."
+          />
+
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <h2 className="text-lg font-semibold text-gray-900">Quick Links</h2>

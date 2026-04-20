@@ -23,6 +23,7 @@ import DeptHeadRequestHistory from './pages/DeptHeadRequestHistory';
 import DeptHeadDepartments from './pages/DeptHeadDepartments';
 import DeptHeadHelp from './pages/DeptHeadHelp';
 import RegistrationRequests from './pages/RegistrationRequests';
+import AdminDashboard from './pages/AdminDashboard';
 function App() {
   return (
     <AuthProvider>
@@ -58,6 +59,8 @@ function App() {
               <Route path="/dept-head/help" element={<DeptHeadHelp />} />
             </Route>
             <Route element={<AdminRoute />}>
+              <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/budget" element={<Budget />} />
               {/* Legacy /users route is retired; user management moved into Colleges details. */}
               <Route path="/users" element={<Navigate to="/colleges" replace />} />

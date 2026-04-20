@@ -106,6 +106,7 @@ export default function FacultyRequestHistory() {
           <table className="min-w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">RIS / SAI No.</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Item</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Amount</th>
@@ -116,13 +117,25 @@ export default function FacultyRequestHistory() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
                     No requests found.
                   </td>
                 </tr>
               ) : (
                 rows.map((r) => (
                   <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/80">
+                    <td className="px-4 py-3 text-xs font-mono text-gray-700 whitespace-nowrap">
+                      {r.ris_no ? (
+                        <>
+                          <span className="block text-gray-900">{r.ris_no}</span>
+                          <span className="block text-gray-500">{r.sai_no || '—'}</span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400 italic">
+                          {r.status === 'Draft' ? 'not sent' : 'pending'}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{r.item_name}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{r.status}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{amount(r.total_price || 0)}</td>

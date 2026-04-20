@@ -23,6 +23,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
   const { profile, user, signOut, isAdmin } = useAuth();
 
   const navItems: Array<{ name: string; icon: typeof Wallet; path: string; roles: string[] }> = [
+    { name: 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard', roles: ['Admin'] },
     { name: 'Budget', icon: Wallet, path: '/budget', roles: ['Admin'] },
     { name: 'Colleges', icon: Building2, path: '/colleges', roles: ['Admin'] },
     { name: 'Logs', icon: ScrollText, path: '/logs', roles: ['Admin'] },

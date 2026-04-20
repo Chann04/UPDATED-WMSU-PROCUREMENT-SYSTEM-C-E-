@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { Bell, Building2, Loader2, PlusCircle } from 'lucide-react';
+import AnalyticsPanel from '../components/AnalyticsPanel';
 
 export default function FacultyDashboard() {
   const { profile } = useAuth();
@@ -88,6 +89,11 @@ export default function FacultyDashboard() {
               <p className="text-xs text-gray-500 mt-1">Draft / Pending</p>
             </Link>
           </div>
+
+          <AnalyticsPanel
+            requests={requests}
+            subheading="A visual summary of your own procurement requests."
+          />
         </>
       )}
     </div>
