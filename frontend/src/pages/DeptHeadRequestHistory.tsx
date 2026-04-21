@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { requestsAPI } from '../lib/supabaseApi';
+import { collegeBudgetTypesAPI, requestsAPI } from '../lib/supabaseApi';
 import { supabase } from '../lib/supabaseClient';
 import type { College, RequestWithRelations } from '../types/database';
 import { Eye, Loader2 } from 'lucide-react';
@@ -17,6 +17,8 @@ export default function DeptHeadRequestHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [college, setCollege] = useState<College | null>(null);
+  const [typeRemainingById, setTypeRemainingById] = useState<Record<string, number>>({});
+  const [collegeRemaining, setCollegeRemaining] = useState<number | null>(null);
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
   const [search, setSearch] = useState('');
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,8 +35,30 @@ export default function DeptHeadRequestHistory() {
       const { college: handled, requests } = await requestsAPI.getForHandledCollege(profile.id);
       setCollege(handled);
       setRows(requests);
+      const committedStatuses = ['Approved', 'Procuring', 'ProcurementDone', 'Received', 'Completed'];
+      const committed = requests
+        .filter((r) => committedStatuses.includes(r.status))
+        .reduce((sum, r) => sum + Number(r.total_price || 0), 0);
+      const overallCeiling = Number(profile.approved_budget || 0);
+      setCollegeRemaining(Math.max(0, overallCeiling - committed));
+
+      if (!handled?.id) {
+        setTypeRemainingById({});
+        return;
+      }
+      const types = (await collegeBudgetTypesAPI.getByCollegeId(handled.id)).filter((t) => t.is_active);
+      const nextRemaining: Record<string, number> = {};
+      for (const t of types) {
+        const used = requests
+          .filter((r) => committedStatuses.includes(r.status) && r.college_budget_type_id === t.id)
+          .reduce((sum, r) => sum + Number(r.total_price || 0), 0);
+        nextRemaining[t.id] = Math.max(0, Number(t.amount || 0) - used);
+      }
+      setTypeRemainingById(nextRemaining);
     } catch (e: any) {
       setError(e?.message || 'Failed to load requests.');
+      setTypeRemainingById({});
+      setCollegeRemaining(null);
     } finally {
       setLoading(false);
     }
@@ -66,6 +90,7 @@ export default function DeptHeadRequestHistory() {
   }, [profile?.id, loadRows]);
 
   const rawStatusTab = (searchParams.get('status') || '').toLowerCase();
+  const departmentFilter = (searchParams.get('department') || '').trim();
   const activeStatusTab: 'all' | 'pending' | 'approved' | 'procuring' | 'history' | 'notifications' =
     rawStatusTab === 'pending' ||
     rawStatusTab === 'approved' ||
@@ -116,13 +141,18 @@ export default function DeptHeadRequestHistory() {
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return statusFilteredRows;
-    return statusFilteredRows.filter((r) => {
+    const byDepartment = departmentFilter
+      ? statusFilteredRows.filter(
+          (r) => (r.requester?.faculty_department || '').trim().toLowerCase() === departmentFilter.toLowerCase()
+        )
+      : statusFilteredRows;
+    if (!q) return byDepartment;
+    return byDepartment.filter((r) => {
       const requester = `${r.requester?.full_name || ''} ${r.requester?.faculty_department || ''}`.toLowerCase();
       const rowText = `${r.item_name} ${r.ris_no || ''} ${r.sai_no || ''} ${r.status}`.toLowerCase();
       return rowText.includes(q) || requester.includes(q);
     });
-  }, [statusFilteredRows, search]);
+  }, [statusFilteredRows, search, departmentFilter]);
 
   const subtitle = useMemo(() => {
     if (activeStatusTab === 'notifications') {
@@ -174,6 +204,29 @@ export default function DeptHeadRequestHistory() {
             className="w-full md:w-[420px] px-3 py-2 rounded-lg border border-gray-300 text-sm"
           />
         </div>
+        {departmentFilter ? (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-800 px-3 py-1 text-xs">
+              Department filter: {departmentFilter}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete('department');
+                setSearchParams(next);
+              }}
+              className="text-xs text-gray-600 underline hover:text-gray-900"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+        {collegeRemaining !== null ? (
+          <div className="inline-flex items-center rounded-full bg-amber-50 text-amber-800 px-3 py-1 text-xs">
+            Budget Ceiling: College remaining {amount(collegeRemaining)}
+          </div>
+        ) : null}
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{error}</div>}
@@ -193,6 +246,7 @@ export default function DeptHeadRequestHistory() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Integrity</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type Budget</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Form</th>
               </tr>
@@ -200,7 +254,7 @@ export default function DeptHeadRequestHistory() {
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                     {activeStatusTab === 'notifications'
                       ? 'No notifications found.'
                       : activeStatusTab === 'pending'
@@ -257,6 +311,17 @@ export default function DeptHeadRequestHistory() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{amount(r.total_price || 0)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap">
+                      {r.college_budget_type_id ? (
+                        <span className="inline-flex rounded-full bg-blue-50 text-blue-800 px-2 py-0.5">
+                          Type rem: {amount(typeRemainingById[r.college_budget_type_id] ?? 0)}
+                        </span>
+                      ) : (
+                        <span className="inline-flex rounded-full bg-gray-100 text-gray-700 px-2 py-0.5">
+                          General pool
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>

@@ -34,6 +34,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   const [budgetTypeRemaining, setBudgetTypeRemaining] = useState<Record<string, number>>({});
   const [loadingBudgetTypes, setLoadingBudgetTypes] = useState(false);
   const [approveBudgetTypeId, setApproveBudgetTypeId] = useState('');
+  const [collegeRemaining, setCollegeRemaining] = useState<number | null>(null);
   const [approveReason, setApproveReason] = useState('');
   const [approveEditedConfirm, setApproveEditedConfirm] = useState(false);
   const [approveModalError, setApproveModalError] = useState('');
@@ -42,6 +43,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   const [adjustEditMode, setAdjustEditMode] = useState(false);
   const [adjustItems, setAdjustItems] = useState<ParsedRequisitionItem[]>([]);
   const [adjustReason, setAdjustReason] = useState('');
+  const [adjustBudgetTypeId, setAdjustBudgetTypeId] = useState('');
   const [integrityRows, setIntegrityRows] = useState<IntegrityEventWithActor[]>([]);
   const [integrityLoading, setIntegrityLoading] = useState(false);
 
@@ -77,7 +79,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   }, [profile?.id, isDeptHead]);
 
   useEffect(() => {
-    if (!showApproveModal || !myCollege?.id) return;
+    if ((!showApproveModal && !adjustEditMode) || !myCollege?.id) return;
     let cancelled = false;
     setLoadingBudgetTypes(true);
     setBudgetTypeRemaining({});
@@ -89,10 +91,10 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     return () => {
       cancelled = true;
     };
-  }, [showApproveModal, myCollege?.id]);
+  }, [showApproveModal, adjustEditMode, myCollege?.id]);
 
   useEffect(() => {
-    if (!showApproveModal || budgetTypes.length === 0) return;
+    if ((!showApproveModal && !adjustEditMode) || budgetTypes.length === 0) return;
     let cancelled = false;
     void Promise.all(
       budgetTypes.map(async (t) => {
@@ -107,10 +109,35 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     return () => {
       cancelled = true;
     };
-  }, [showApproveModal, budgetTypes]);
+  }, [showApproveModal, adjustEditMode, budgetTypes]);
+
+  useEffect(() => {
+    if (!profile?.id || !isDeptHead()) {
+      setCollegeRemaining(null);
+      return;
+    }
+    if (!showApproveModal && !adjustEditMode) return;
+    let cancelled = false;
+    void requestsAPI.getForHandledCollege(profile.id).then(({ requests }) => {
+      if (cancelled) return;
+      const committed = requests
+        .filter((r) => ['Approved', 'Procuring', 'ProcurementDone', 'Received', 'Completed'].includes(r.status))
+        .reduce((sum, r) => sum + Number(r.total_price || 0), 0);
+      const ceiling = Number(profile.approved_budget || 0);
+      setCollegeRemaining(Math.max(0, ceiling - committed));
+    }).catch(() => {
+      if (!cancelled) setCollegeRemaining(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, profile?.approved_budget, isDeptHead, showApproveModal, adjustEditMode]);
 
   useEffect(() => {
     if (!request) return;
+    // Only hard-reset modal/action state when switching to a different request.
+    // Edited requisition updates can change quantity on the same request and
+    // should not wipe budget-type selection while the approve modal is open.
     setQtyReceived(String(request.quantity ?? ''));
     setDeliveryRemarks(request.partial_delivery_remarks || '');
     setDeliveryError('');
@@ -119,6 +146,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     setAdjustEditMode(false);
     setAdjustItems([]);
     setAdjustReason('');
+    setAdjustBudgetTypeId('');
     setReceivedByOverride(null);
     setShowApproveModal(false);
     setApproveBudgetTypeId('');
@@ -126,7 +154,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     setApproveEditedConfirm(false);
     setApproveModalError('');
     setProcurementFailedReason('');
-  }, [request?.id, request?.quantity, request?.partial_delivery_remarks]);
+  }, [request?.id]);
 
   useEffect(() => {
     if (!request?.id) {
@@ -281,6 +309,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     }
     setActionError('');
     setAdjustEditMode(true);
+    setAdjustBudgetTypeId(request?.college_budget_type_id || '');
     setAdjustItems(structuredParsed.items.map((it, i) => ({ ...it, lineNo: i + 1 })));
   };
 
@@ -288,6 +317,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     setAdjustEditMode(false);
     setAdjustItems([]);
     setAdjustReason('');
+    setAdjustBudgetTypeId('');
     setActionError('');
   };
 
@@ -303,6 +333,19 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
       setActionError('Keep at least one line with item description and quantity.');
       return;
     }
+    const tid = adjustBudgetTypeId.trim();
+    let selectedType: (typeof budgetTypes)[number] | undefined;
+    if (request.status === 'Pending') {
+      if (!tid) {
+        setActionError('Select a budget type before saving this edited request as approved.');
+        return;
+      }
+      selectedType = budgetTypes.find((t) => t.id === tid);
+      if (!selectedType) {
+        setActionError('Selected budget type is no longer available. Refresh and try again.');
+        return;
+      }
+    }
     const normalized = adjustItems.map((it, i) => ({ ...it, lineNo: i + 1 }));
     const nextStructured: ParsedRequisitionStructured = {
       ...structuredParsed,
@@ -316,6 +359,19 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     const totalQty = normalized.reduce((s, i) => s + i.qty, 0);
     const grandTotal = normalized.reduce((s, i) => s + i.qty * i.unitPrice, 0);
     const avgUnit = totalQty > 0 ? grandTotal / totalQty : 0;
+    if (request.status === 'Pending' && tid && selectedType) {
+      const cap = Number(selectedType.amount || 0);
+      const used = await requestsAPI.sumCommittedTotalForBudgetType(tid);
+      const remaining = Math.max(0, cap - used);
+      const costCents = Math.round(grandTotal * 100);
+      const remainingCents = Math.round(remaining * 100);
+      if (costCents > remainingCents) {
+        setActionError(
+          `This request total (${peso(grandTotal)}) exceeds what is left for "${selectedType.name}" (${peso(remaining)} remaining of ${peso(cap)} allocated). Choose another type, reduce the request, or increase the allocation.`
+        );
+        return;
+      }
+    }
 
     setActionLoading(true);
     setActionError('');
@@ -350,6 +406,11 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
           total_price: Math.round(grandTotal * 100) / 100,
         },
       });
+      if (request.status === 'Pending') {
+        await requestsAPI.update(request.id, {
+          college_budget_type_id: tid || null,
+        });
+      }
       onRecorded?.();
       onClose();
     } catch (e: any) {
@@ -661,6 +722,42 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
                   placeholder="Explain what was corrected and why. This is shown to the requesting department."
                 />
               </div>
+              {request.status === 'Pending' && (
+                <div>
+                  <label htmlFor="adjust-budget-type" className="block text-xs font-medium text-gray-700 mb-1">
+                    Budget type <span className="text-red-700">*</span>
+                  </label>
+                  {collegeRemaining !== null ? (
+                    <p className="text-xs text-gray-600 mb-1">
+                      Budget Ceiling: College available <span className="font-semibold text-gray-900">{peso(collegeRemaining)}</span>
+                    </p>
+                  ) : null}
+                  <select
+                    id="adjust-budget-type"
+                    value={adjustBudgetTypeId}
+                    onChange={(e) => {
+                      setAdjustBudgetTypeId(e.target.value);
+                      setActionError('');
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+                    disabled={loadingBudgetTypes}
+                  >
+                    <option value="">Select budget type…</option>
+                    {budgetTypes.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                        {t.fund_code ? ` (${t.fund_code})` : ''} — Remaining ₱
+                        {Number(
+                          budgetTypeRemaining[t.id] ?? Number(t.amount || 0)
+                        ).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Edited pending requests must be assigned to a budget type before approval.
+                  </p>
+                </div>
+              )}
               {actionError && (
                 <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actionError}</p>
               )}
@@ -675,7 +772,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
                 </button>
                 <button
                   type="button"
-                  disabled={actionLoading}
+                  disabled={actionLoading || (request.status === 'Pending' && !adjustBudgetTypeId.trim())}
                   onClick={() => void saveAdjustAsApproved()}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-900 text-white text-sm font-medium hover:bg-red-800 disabled:opacity-50"
                 >
@@ -846,6 +943,11 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
                 <label htmlFor="approve-budget-type" className="block text-sm font-medium text-gray-800 mb-1">
                   Budget type
                 </label>
+                {collegeRemaining !== null ? (
+                  <p className="text-xs text-gray-600 mb-2">
+                    Budget Ceiling: College available <span className="font-semibold text-gray-900">{peso(collegeRemaining)}</span>
+                  </p>
+                ) : null}
                 <select
                   id="approve-budget-type"
                   value={approveBudgetTypeId}

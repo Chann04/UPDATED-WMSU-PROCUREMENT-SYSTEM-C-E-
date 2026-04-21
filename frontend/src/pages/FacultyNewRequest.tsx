@@ -142,6 +142,17 @@ export default function FacultyNewRequest() {
 
   const totalQty = useMemo(() => computedRows.reduce((s, r) => s + r.qty, 0), [computedRows]);
   const grandTotal = useMemo(() => computedRows.reduce((s, r) => s + r.rowTotal, 0), [computedRows]);
+  const selectedBudgetTypeRemaining = useMemo(() => {
+    if (!budgetSnap || !budgetTypeId.trim()) return null;
+    const t = budgetSnap.budgetTypes.find((x) => x.id === budgetTypeId);
+    if (!t) return null;
+    const used = budgetSnap.committedByTypeId[t.id] ?? 0;
+    return {
+      name: t.name,
+      remaining: Math.max(0, Number(t.amount) - used),
+      ceiling: Number(t.amount),
+    };
+  }, [budgetSnap, budgetTypeId]);
 
   const resetForm = () => {
     // Division / Office-Section come from the profile and must not be cleared.
@@ -357,7 +368,37 @@ export default function FacultyNewRequest() {
     setSuccess('');
     setLoading(true);
     try {
+      const [snap, draft] = await Promise.all([
+        procurementBudgetAPI.getFacultySnapshot(),
+        requestsAPI.getById(id),
+      ]);
+      if (!draft) {
+        throw new Error('Draft not found.');
+      }
+      if (snap.fundSources.length > 0 && !draft.budget_fund_source_id) {
+        throw new Error('Select a funding source in the draft before submitting.');
+      }
+      const total = Number(draft.total_price || 0);
+      if (snap.college && snap.collegeAdminBudget > 0 && total > snap.remainingCollege + 0.005) {
+        throw new Error(
+          `This draft total (${money(total)}) exceeds your college available budget (${money(snap.remainingCollege)}).`
+        );
+      }
+      if (draft.college_budget_type_id) {
+        const t = snap.budgetTypes.find((x) => x.id === draft.college_budget_type_id);
+        if (!t) {
+          throw new Error('Selected budget type for this draft is no longer available.');
+        }
+        const used = snap.committedByTypeId[t.id] ?? 0;
+        const rem = Math.max(0, Number(t.amount) - used);
+        if (total > rem + 0.005) {
+          throw new Error(
+            `This draft total (${money(total)}) exceeds remaining budget for "${t.name}" (${money(rem)} left).`
+          );
+        }
+      }
       await requestsAPI.submit(id);
+      setBudgetSnap(snap);
       await loadMine();
       setSuccess('Request submitted for approval.');
     } catch (err: any) {
@@ -366,6 +407,8 @@ export default function FacultyNewRequest() {
       setLoading(false);
     }
   };
+
+  const currentBudgetValidation = validateBudgetLink(grandTotal);
 
   const onEditDraft = (draft: RequestWithRelations) => {
     const parsed = parseRequisitionDescription(draft.description);
@@ -806,15 +849,27 @@ export default function FacultyNewRequest() {
               <strong>Send Request</strong> submits to your assigned college (Pending). <strong>Create draft</strong> saves without submitting; use Submit in the list below later.
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 space-y-1">
                 Requested Qty: <span className="font-semibold text-gray-900">{totalQty}</span> | Estimated total:{' '}
                 <span className="font-semibold text-gray-900">{money(grandTotal)}</span>
                 {editingDraftId ? <span className="ml-2 text-amber-700">(Editing draft)</span> : null}
+                {budgetSnap && (
+                  <p className="text-xs text-gray-600">
+                    Budget Ceiling: College available{' '}
+                    <span className="font-semibold text-gray-900">{money(budgetSnap.remainingCollege)}</span>
+                    {selectedBudgetTypeRemaining
+                      ? ` · ${selectedBudgetTypeRemaining.name} remaining ${money(selectedBudgetTypeRemaining.remaining)} of ${money(selectedBudgetTypeRemaining.ceiling)}`
+                      : ''}
+                  </p>
+                )}
+                {currentBudgetValidation ? (
+                  <p className="text-xs text-red-700">{currentBudgetValidation}</p>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-3 justify-end">
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !!currentBudgetValidation}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-900 text-red-900 bg-white hover:bg-red-50 disabled:opacity-50 min-w-[200px]"
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
@@ -832,7 +887,7 @@ export default function FacultyNewRequest() {
                 ) : null}
                 <button
                   type="button"
-                  disabled={loading}
+                  disabled={loading || !!currentBudgetValidation}
                   onClick={() => void onSendRequest()}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-900 text-white hover:bg-red-800 disabled:opacity-50 min-w-[200px]"
                 >
