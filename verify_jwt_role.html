@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verify JWT Role</title>
+</head>
+<body>
+    <h1>JWT Token Role Verification</h1>
+    <p>Paste your JWT token below to verify it has the correct "role": "anon" claim:</p>
+    <textarea id="jwtInput" rows="5" cols="80" placeholder="Paste JWT token here..."></textarea>
+    <br><br>
+    <button onclick="verifyJWT()">Verify JWT</button>
+    <div id="result" style="margin-top: 20px;"></div>
+
+    <script>
+        function base64UrlDecode(str) {
+            str = str.replace(/-/g, '+').replace(/_/g, '/');
+            while (str.length % 4) {
+                str += '=';
+            }
+            return JSON.parse(atob(str));
+        }
+
+        function verifyJWT() {
+            const jwt = document.getElementById('jwtInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            if (!jwt) {
+                resultDiv.innerHTML = '<p style="color: red;">Please paste a JWT token</p>';
+                return;
+            }
+
+            try {
+                const parts = jwt.split('.');
+                if (parts.length !== 3) {
+                    throw new Error('Invalid JWT format');
+                }
+
+                const payload = base64UrlDecode(parts[1]);
+                
+                let html = '<h2>JWT Payload:</h2>';
+                html += '<pre>' + JSON.stringify(payload, null, 2) + '</pre>';
+                
+                if (payload.role === 'anon') {
+                    html += '<p style="color: green; font-weight: bold;">✅ Role is "anon" - This is correct!</p>';
+                } else {
+                    html += '<p style="color: red; font-weight: bold;">❌ Role is "' + (payload.role || 'missing') + '" - Should be "anon"</p>';
+                }
+
+                resultDiv.innerHTML = html;
+            } catch (error) {
+                resultDiv.innerHTML = '<p style="color: red;">Error: ' + error.message + '</p>';
+            }
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,32 @@
+-- =============================================================================
+-- DO NOT PASTE TypeScript FROM src/lib/roles.ts HERE — Supabase only runs SQL.
+-- Role labels (WMSU Admin, College Admin, Department) live in the frontend code.
+-- =============================================================================
+-- Role DISPLAY NAMES vs STORED VALUES (WMSU Procurement)
+-- =============================================================================
+-- The app shows:  WMSU Admin | College Admin | Department
+-- The database keeps canonical values (CHECK constraint + app logic):
+--                 'Admin'      | 'DeptHead'    | 'Faculty'
+--
+-- You do NOT need to change profiles.role in Supabase for the new labels.
+-- Routes (/faculty/*, /dept-head/*), RLS policies, and APIs use the canonical
+-- values above. Only the frontend labels changed (see src/lib/roles.ts).
+--
+-- Optional — reporting view with friendly labels (read-only; adjust RLS if used):
+--
+-- CREATE OR REPLACE VIEW public.profiles_role_labels AS
+-- SELECT
+--   p.*,
+--   CASE p.role
+--     WHEN 'Admin' THEN 'WMSU Admin'
+--     WHEN 'DeptHead' THEN 'College Admin'
+--     WHEN 'Faculty' THEN 'Department'
+--     ELSE p.role
+--   END AS role_display_name
+-- FROM public.profiles p;
+--
+-- GRANT SELECT ON public.profiles_role_labels TO authenticated;  -- if needed
+-- =============================================================================
+
+-- Optional: harmless query to verify the SQL editor works (returns one row).
+SELECT 1 AS ok_role_display_names_are_in_the_app_not_in_sql;

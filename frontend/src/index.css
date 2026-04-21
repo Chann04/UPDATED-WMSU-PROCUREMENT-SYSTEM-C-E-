@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wmsu-black: #0a0a0a;
+  --font-sans: 'Libra Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Libra Sans – by Stefan Peev, Context Ltd (OFL).
+ * @font-face declarations intentionally omitted: the font files are not
+ * bundled in public/fonts/, so the `font-family` chain below falls through
+ * to the system font automatically. If you want Libra Sans, drop the
+ * .woff2/.ttf files into public/fonts/ and re-add the @font-face blocks.
+ */
+
+/* WMSU Color Theme */
+:root {
+  --wmsu-red: #8B0000;
+  --wmsu-red-light: #A52A2A;
+  --wmsu-red-dark: #6B0000;
+  --wmsu-green: #228B22;
+  --wmsu-orange: #FF8C00;
+  --wmsu-blue: #1E40AF;
+  --wmsu-white: #FFFFFF;
+  --wmsu-gray-light: #F5F5F5;
+  --wmsu-gray: #E5E5E5;
+  /* Deep solid black for primary text (Poppins-style contrast) */
+  --wmsu-text-black: #0a0a0a;
+}
+
+/* Responsive base font: scales between 14px and 16px with viewport */
+html {
+  font-size: clamp(14px, 0.875rem + 0.25vw, 16px);
+}
+
+/* Custom styles */
+body {
+  font-family: 'Libra Sans', var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background-color: var(--wmsu-gray-light);
+  color: var(--wmsu-text-black);
+}
+
+/* Page headers: responsive size and bold */
+main h1 {
+  font-weight: 700;
+  font-size: clamp(1.375rem, 4vw + 1rem, 1.875rem);
+  line-height: 1.25;
+}
+
+/* Page subtitles (e.g. under h1): scale with viewport */
+main h1 + p {
+  font-size: clamp(0.8125rem, 0.5vw + 0.75rem, 1rem);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--wmsu-gray-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wmsu-red);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wmsu-red-dark);
+}
+
+/* Landing page: hide scrollbar until user scrolls */
+html.landing-scrollbar-hidden {
+  scrollbar-width: none;
+}
+html.landing-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+html.landing-scrollbar-hidden.scrollbar-visible {
+  scrollbar-width: thin;
+}
+html.landing-scrollbar-hidden.scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+/* Hide number input spin buttons */
+.input-no-spinner::-webkit-inner-spin-button,
+.input-no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.input-no-spinner {
+  -moz-appearance: textfield;
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Detail panel: fade and slide up when content changes */
+@keyframes detail-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-detail-panel-in {
+  animation: detail-panel-in 0.3s ease-out forwards;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-document-root,
+  .print-document-root * {
+    visibility: visible !important;
+  }
+
+  .print-document-root {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  .print-document-content {
+    padding: 0 !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .ics-print-sheet {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .ics-signatory-print > div {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .ics-signatory-print p {
+    color: #111827 !important;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}
